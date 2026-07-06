@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=75.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-automation-framework"
+version = "0.1.0"
+description = "Multi-platform automation framework with AI-powered element healing"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+
+[project.urls]
+Home = "https://github.com/mkhaufillah/ai-automation-framework"
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "web: Web tests using Playwright",
+    "android: Android native tests using Appium",
+    "ios: iOS native tests using Appium",
+    "healing: AI healing tests",
+    "smoke: Smoke tests",
+    "regression: Regression tests",
+]
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)s] %(message)s"

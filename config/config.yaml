@@ -1,0 +1,102 @@
+# =============================================================================
+# AI Automation Framework — Global Configuration
+# =============================================================================
+
+# Default platform: web | android | ios
+platform: web
+
+# -------------------------------
+# Web — Playwright
+# -------------------------------
+web:
+  browser: chromium           # chromium | firefox | webkit
+  headless: false
+  viewport:
+    width: 1280
+    height: 720
+  locale: en-US
+  timezone: Asia/Jakarta
+  record_video: false
+  screenshot_on_failure: true
+  trace_on_failure: true
+  base_url: ""                # Override per environment
+
+# -------------------------------
+# Android — Appium
+# -------------------------------
+android:
+  appium_url: http://localhost:4723
+  app: ""                     # Path to .apk / .aab
+  app_package: ""
+  app_activity: ""
+  automation_name: UiAutomator2
+  platform_version: ""        # e.g., "14"
+  device_name: ""             # e.g., "Android Emulator"
+  udid: ""                    # Specific device serial
+  no_reset: true
+  full_reset: false
+  auto_grant_permissions: true
+  adb_exec_timeout: 30000
+  system_port: 8200
+
+# -------------------------------
+# iOS — Appium
+# -------------------------------
+ios:
+  appium_url: http://localhost:4723
+  app: ""                     # Path to .app / .ipa
+  bundle_id: ""
+  automation_name: XCUITest
+  platform_version: ""        # e.g., "17.2"
+  device_name: ""             # e.g., "iPhone 15"
+  udid: ""
+  no_reset: true
+  full_reset: false
+  wda_port: 8100
+
+# -------------------------------
+# AI Healing
+# -------------------------------
+healing:
+  enabled: true
+
+  # --- Heuristic fallback (no LLM cost, runs first) ---
+  heuristics:
+    enabled: true
+    max_attempts: 3
+
+  # --- LLM-based healing (runs when heuristics fail) ---
+  llm:
+    enabled: true
+    provider: openai          # openai | litellm
+    model: gpt-4o-mini
+    api_key: ""               # Set via env: HEALING_API_KEY or OPENAI_API_KEY
+    api_base: ""              # For OpenAI-compatible / local endpoints
+    temperature: 0.1
+    max_tokens: 500
+    timeout: 15
+    # --- Context for the LLM ---
+    include_screenshot: true
+    include_page_source: true
+
+  # --- Cache healed locators for future runs ---
+  cache:
+    enabled: true
+    db_path: .healing_cache.json
+
+# -------------------------------
+# Reporting
+# -------------------------------
+reporting:
+  enabled: true
+  output_dir: reports/
+  format: html                # html | json | junit
+  screenshots: true
+
+# -------------------------------
+# Logging
+# -------------------------------
+logging:
+  level: INFO                 # DEBUG | INFO | WARNING | ERROR
+  file: logs/framework.log
+  format: "{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} | {message}"
