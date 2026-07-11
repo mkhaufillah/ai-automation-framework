@@ -10,7 +10,7 @@ import logging
 from typing import Any, Optional, Type
 
 from autofw.core.config import AutomationConfig
-from autofw.core.constants import Platform, DEFAULT_TIMEOUT_MS
+from autofw.core.constants import DEFAULT_TIMEOUT_MS
 from autofw.driver_factory import DriverFactory
 from autofw.healing import HealingOrchestrator
 from autofw.locator import Locator

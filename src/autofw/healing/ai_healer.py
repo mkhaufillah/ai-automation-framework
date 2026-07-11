@@ -186,9 +186,15 @@ class LLMHealer:
         return messages
 
     def _call_llm(self, messages: list[dict[str, Any]], api_key: str) -> str:
-        """Call the LLM API (OpenAI-compatible or LiteLLM)."""
+        """Call the LLM API (OpenAI-compatible, LiteLLM, Gemini, Anthropic, or OpenCode)."""
         if self.config.provider == "litellm":
             return self._call_litellm(messages)
+        elif self.config.provider == "gemini":
+            return self._call_gemini(messages, api_key)
+        elif self.config.provider == "anthropic":
+            return self._call_anthropic(messages, api_key)
+        elif self.config.provider == "opencode":
+            return self._call_opencode(messages, api_key)
         return self._call_openai(messages, api_key)
 
     def _call_openai(self, messages: list[dict[str, Any]], api_key: str) -> str:
@@ -223,6 +229,118 @@ class LLMHealer:
             base_url=self.config.api_base or None,
         )
         return response.choices[0].message.content or ""
+
+    def _call_gemini(self, messages: list[dict[str, Any]], api_key: str) -> str:
+        """Call Google Gemini API."""
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError:
+            raise ImportError("Please install google-genai to use the gemini provider.")
+
+        client = genai.Client(api_key=api_key)
+        
+        system_instruction = None
+        gemini_contents = []
+        
+        for msg in messages:
+            if msg["role"] == "system":
+                system_instruction = msg["content"]
+            elif msg["role"] == "user":
+                parts = []
+                if isinstance(msg["content"], list):
+                    for item in msg["content"]:
+                        if item["type"] == "text":
+                            parts.append(types.Part.from_text(text=item["text"]))
+                        elif item["type"] == "image_url":
+                            b64_data = item["image_url"]["url"].split(",", 1)[1]
+                            image_bytes = base64.b64decode(b64_data)
+                            parts.append(types.Part.from_bytes(data=image_bytes, mime_type="image/png"))
+                else:
+                    parts.append(types.Part.from_text(text=msg["content"]))
+                gemini_contents.append(types.Content(role="user", parts=parts))
+
+        config = types.GenerateContentConfig(
+            temperature=self.config.temperature,
+            max_output_tokens=self.config.max_tokens,
+            system_instruction=system_instruction,
+        )
+
+        response = client.models.generate_content(
+            model=self.config.model,
+            contents=gemini_contents,
+            config=config,
+        )
+        return response.text
+
+    def _call_anthropic(self, messages: list[dict[str, Any]], api_key: str) -> str:
+        """Call Anthropic API."""
+        try:
+            import anthropic
+        except ImportError:
+            raise ImportError("Please install anthropic to use the anthropic provider.")
+
+        client = anthropic.Anthropic(api_key=api_key)
+        if self.config.api_base:
+            client.base_url = self.config.api_base
+
+        system_instruction = ""
+        anthropic_messages = []
+        
+        for msg in messages:
+            if msg["role"] == "system":
+                system_instruction = msg["content"]
+            elif msg["role"] == "user":
+                content_parts = []
+                if isinstance(msg["content"], list):
+                    for item in msg["content"]:
+                        if item["type"] == "text":
+                            content_parts.append({"type": "text", "text": item["text"]})
+                        elif item["type"] == "image_url":
+                            b64_data = item["image_url"]["url"].split(",", 1)[1]
+                            content_parts.append({
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/png",
+                                    "data": b64_data,
+                                }
+                            })
+                else:
+                    content_parts.append({"type": "text", "text": msg["content"]})
+                
+                anthropic_messages.append({"role": "user", "content": content_parts})
+
+        response = client.messages.create(
+            model=self.config.model,
+            max_tokens=self.config.max_tokens,
+            temperature=self.config.temperature,
+            system=system_instruction,
+            messages=anthropic_messages,
+        )
+        return response.content[0].text
+
+    def _call_opencode(self, messages: list[dict[str, Any]], api_key: str) -> str:
+        """Call OpenCode API."""
+        import requests
+        
+        url = self.config.api_base or "https://api.opencode.so/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": self.config.model,
+            "messages": messages,
+            "temperature": self.config.temperature,
+            "max_tokens": self.config.max_tokens,
+        }
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=self.config.timeout)
+        response.raise_for_status()
+        
+        return response.json()["choices"][0]["message"]["content"]
 
     def _parse_response(self, raw: str) -> dict[str, Any]:
         """Parse the LLM response into a structured result."""

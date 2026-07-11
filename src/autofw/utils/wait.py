@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, Optional, Type, Tuple
+from typing import Any, Callable, Type, Tuple
 
 from autofw.core.constants import DEFAULT_POLL_INTERVAL_MS, DEFAULT_TIMEOUT_MS
 from autofw.core.exceptions import TimeoutException

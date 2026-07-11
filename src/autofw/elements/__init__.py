@@ -16,7 +16,7 @@ from appium.webdriver import Remote as MobileDriver
 from appium.webdriver.common.appiumby import AppiumBy
 from selenium.common.exceptions import NoSuchElementException, TimeoutException as SelTimeoutException
 
-from autofw.core.constants import DEFAULT_TIMEOUT_MS, ElementAction, LocatorStrategy
+from autofw.core.constants import DEFAULT_TIMEOUT_MS
 from autofw.core.exceptions import ElementException, HealingException
 from autofw.healing import HealingOrchestrator
 from autofw.locator import Locator

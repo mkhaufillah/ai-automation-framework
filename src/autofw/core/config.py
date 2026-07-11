@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Optional
+from typing import ClassVar, Literal, Optional
 
 import yaml
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 class _HeuristicConfig(BaseSettings):
@@ -23,7 +27,7 @@ class _HeuristicConfig(BaseSettings):
 
 class _LLMConfig(BaseSettings):
     enabled: bool = True
-    provider: Literal["openai", "litellm"] = "openai"
+    provider: Literal["openai", "litellm", "gemini", "anthropic", "opencode"] = "openai"
     model: str = "gpt-4o-mini"
     api_key: str = ""
     api_base: str = ""

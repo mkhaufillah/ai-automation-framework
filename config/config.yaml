@@ -68,10 +68,10 @@ healing:
   # --- LLM-based healing (runs when heuristics fail) ---
   llm:
     enabled: true
-    provider: openai          # openai | litellm
-    model: gpt-4o-mini
+    provider: opencode          # openai | litellm | gemini | anthropic | opencode
+    model: deepseek-v4-flash
     api_key: ""               # Set via env: HEALING_API_KEY or OPENAI_API_KEY
-    api_base: ""              # For OpenAI-compatible / local endpoints
+    api_base: "https://opencode.ai/zen/go/v1"              # For OpenAI-compatible / local endpoints
     temperature: 0.1
     max_tokens: 500
     timeout: 15

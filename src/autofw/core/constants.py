@@ -4,7 +4,7 @@ Constants and enumerations for the automation framework.
 
 from __future__ import annotations
 
-from enum import Enum, auto
+from enum import Enum
 
 
 class Platform(str, Enum):
