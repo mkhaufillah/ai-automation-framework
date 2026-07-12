@@ -36,49 +36,51 @@ HEALING_SYSTEM_PROMPT = """You are an expert test automation engineer. Your task
 ## Your task:
 Analyze the page source and screenshot to find the correct element. Return ONLY a JSON object with the corrected locator.
 
-## Response format — YOU MUST RESPOND WITH VALID JSON ONLY, no markdown wrapping:
-
-For **web** (Playwright), valid locator keys:
-- `{"css": "selector"}` — CSS selector
-- `{"xpath": "//xpath"}` — XPath expression
-- `{"text": "exact text"}` — Text content match
-- `{"role": "button", "name": "Submit"}` — ARIA role + accessible name
-- `{"label": "Email"}` — Label text (for form fields)
-- `{"placeholder": "Enter email"}` — Placeholder text
-- `{"test_id": "submit-btn"}` — data-testid attribute
-- `{"alt_text": "logo"}` — Alt text on images
-- `{"title": "Tooltip"}` — Title attribute
-
-For **android** (Appium), valid locator keys:
-- `{"accessibility_id": "login"}` — content-desc / accessibility label
-- `{"id": "com.app:id/login"}` — Resource ID
-- `{"xpath": "//android.widget.Button[@text='Login']"}` — XPath
-- `{"class_name": "android.widget.Button"}` — Class name
-- `{"android_ui_automator": "new UiSelector().text(\"Login\")"}` — UiAutomator2
-
-For **ios** (Appium), valid locator keys:
-- `{"accessibility_id": "loginButton"}` — accessibility identifier
-- `{"id": "loginButton"}` — element name/id
-- `{"xpath": "//XCUIElementTypeButton[@name='Login']"}` — XPath
-- `{"class_name": "XCUIElementTypeButton"}` — Class name
-- `{"ios_predicate": "name == 'Login'"}` — iOS predicate string
-- `{"ios_class_chain": "**/XCUIElementTypeButton[`name == 'Login'`]"}` — iOS class chain
-
 ## Rules:
 1. The page source is the ground truth — use it as your primary reference
 2. If a screenshot is provided, use it for visual confirmation
 3. Prefer the most stable, least fragile locator (test_id / accessibility_id > text > xpath)
 4. If the element seems to have changed (different text, different position), note it in the `reason` field
-5. Never return a locator you're not confident about — set `confidence` to "low" if uncertain
+5. DO NOT return the exact same original failing locator. You MUST find a new, working locator from the provided page source!
 
-## Response JSON schema:
-```json
+## Output Format (STRICT):
+You MUST respond with VALID JSON ONLY. Do not write any explanations before or after the JSON.
+Do NOT use markdown wrapping (no ```json or ```). Just start with { and end with }.
+Your output MUST match this exact schema:
 {
-  "locator": { "<strategy>": "<value>" },
-  "reason": "Brief explanation of what changed and why this new locator works",
-  "confidence": "high" | "medium" | "low"
+  "locator": {
+    "<strategy>": "<value>"
+  },
+  "confidence": "high|medium|low",
+  "reason": "Brief explanation of what changed and why this locator is robust"
 }
-```"""
+
+## Permitted Strategies:
+For **web** (Playwright), valid locator keys:
+- `{"css": "selector"}`
+- `{"xpath": "//xpath"}`
+- `{"text": "exact text"}`
+- `{"role": "button", "name": "Submit"}`
+- `{"label": "Email"}`
+- `{"placeholder": "Enter email"}`
+- `{"test_id": "submit-btn"}`
+- `{"alt_text": "logo"}`
+- `{"title": "Tooltip"}`
+
+For **android** (Appium), valid locator keys:
+- `{"accessibility_id": "login"}`
+- `{"id": "com.app:id/login"}`
+- `{"xpath": "//android.widget.Button[@text='Login']"}`
+- `{"class_name": "android.widget.Button"}`
+- `{"android_ui_automator": "new UiSelector().text(\"Login\")"}`
+
+For **ios** (Appium), valid locator keys:
+- `{"accessibility_id": "loginButton"}`
+- `{"id": "loginButton"}`
+- `{"xpath": "//XCUIElementTypeButton[@name='Login']"}`
+- `{"class_name": "XCUIElementTypeButton"}`
+- `{"ios_predicate": "name == 'Login'"}`
+- `{"ios_class_chain": "**/XCUIElementTypeButton[`name == 'Login'`]"}`"""
 
 
 class LLMHealer:
@@ -151,25 +153,28 @@ class LLMHealer:
     ) -> list[dict[str, Any]]:
         """Build the message list for the LLM chat completion."""
 
-        user_content: list[dict[str, Any]] = [
-            {
-                "type": "text",
-                "text": (
-                    f"## Element Context\n"
-                    f"- **Name**: {element_context.get('name', 'unknown')}\n"
-                    f"- **Description**: {element_context.get('description', 'N/A')}\n"
-                    f"- **Page**: {element_context.get('page', 'N/A')}\n"
-                    f"- **Platform**: {platform}\n"
-                    f"- **Original Locator**: {json.dumps(element_context.get('original_locator', {}))}\n\n"
-                    f"## Page Source\n"
-                    f"```\n{page_source[:8000]}\n```\n"
-                    f"{'---' if len(page_source) > 8000 else ''}"
-                ),
-            }
-        ]
+        import re
+        minified = re.sub(r'<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>', '', page_source, flags=re.IGNORECASE | re.DOTALL)
+        minified = re.sub(r'<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>', '', minified, flags=re.IGNORECASE | re.DOTALL)
+        minified = re.sub(r'<svg[^>]*>.*?</svg>', '<svg></svg>', minified, flags=re.IGNORECASE | re.DOTALL)
+        minified = re.sub(r'<!--.*?-->', '', minified, flags=re.DOTALL)
+
+        user_text = (
+            f"## Element Context\n"
+            f"- **Name**: {element_context.get('name', 'unknown')}\n"
+            f"- **Description**: {element_context.get('description', 'N/A')}\n"
+            f"- **Page**: {element_context.get('page', 'N/A')}\n"
+            f"- **Platform**: {platform}\n\n"
+            f"## Page Source\n"
+            f"```\n{minified[:100000]}\n```\n"
+            f"{'---' if len(minified) > 100000 else ''}"
+        )
+
+        user_content = user_text
 
         if screenshot_base64 and self.config.include_screenshot:
-            user_content.append(
+            user_content = [
+                {"type": "text", "text": user_text},
                 {
                     "type": "image_url",
                     "image_url": {
@@ -177,7 +182,7 @@ class LLMHealer:
                         "detail": "high",
                     },
                 }
-            )
+            ]
 
         messages = [
             {"role": "system", "content": HEALING_SYSTEM_PROMPT},
@@ -325,6 +330,9 @@ class LLMHealer:
         import requests
         
         url = self.config.api_base or "https://api.opencode.so/v1/chat/completions"
+        if self.config.api_base and not url.endswith("/chat/completions"):
+            url = f"{url.rstrip('/')}/chat/completions"
+            
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
@@ -338,7 +346,8 @@ class LLMHealer:
         }
         
         response = requests.post(url, json=payload, headers=headers, timeout=self.config.timeout)
-        response.raise_for_status()
+        if not response.ok:
+            raise Exception(f"API Error {response.status_code}: {response.text}")
         
         return response.json()["choices"][0]["message"]["content"]
 
@@ -355,6 +364,14 @@ class LLMHealer:
             raise LLMHealingException(f"Failed to parse LLM response JSON: {e}\nResponse:\n{raw[:500]}")
 
         if "locator" not in result:
-            raise LLMHealingException(f"LLM response missing 'locator' key:\n{result}")
+            valid_keys = {"css", "xpath", "text", "role", "label", "placeholder", "test_id", "alt_text", "title", "id", "name", "class_name", "accessibility_id", "android_ui_automator", "ios_predicate", "ios_class_chain"}
+            if any(k in result for k in valid_keys):
+                result = {
+                    "locator": result,
+                    "reason": "Model returned locator directly without wrapper",
+                    "confidence": "medium"
+                }
+            else:
+                raise LLMHealingException(f"LLM response missing 'locator' key:\n{result}")
 
         return result

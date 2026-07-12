@@ -7,7 +7,7 @@ All page objects should inherit from BasePage and define Locator class attribute
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Type
+from typing import Any, Optional
 
 from autofw.core.config import AutomationConfig
 from autofw.core.constants import DEFAULT_TIMEOUT_MS
@@ -108,7 +108,8 @@ class BasePage:
     def navigate(self, url: str) -> "BasePage":
         """Navigate to a URL (web only)."""
         if self.platform != "web":
-            raise NotImplementedError("navigate() is only available on web platform")
+            raise NotImplementedError(
+                "navigate() is only available on web platform")
         self.driver.goto(url, wait_until="networkidle")
         logger.info("Navigated to: %s", url)
         return self
@@ -180,3 +181,10 @@ class BasePage:
         if self.platform == "web":
             return self.driver.evaluate(script, *args)
         return None
+
+    def wait(self, milliseconds: float) -> "BasePage":
+        """Wait for a given number of milliseconds."""
+        import time
+
+        time.sleep(milliseconds / 1000)  # Convert milliseconds to seconds
+        return self

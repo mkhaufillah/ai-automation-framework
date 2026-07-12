@@ -181,7 +181,7 @@ class BaseElement:
         try:
             element = self._resolve_element()
             return self._perform_action(element, action, **kwargs)
-        except (ElementException, HealingException) as e:
+        except HealingException as e:
             raise e
         except Exception as e:
             logger.warning(
@@ -311,12 +311,24 @@ class BaseElement:
             else:
                 return base64.b64encode(self._driver.get_screenshot_as_png()).decode("utf-8")
 
+        def _verify_locator(loc: dict[str, Any]) -> bool:
+            try:
+                old = self._healed_locator
+                self._healed_locator = loc
+                self._resolve_element()
+                self._healed_locator = old
+                return True
+            except Exception:
+                self._healed_locator = old
+                return False
+
         try:
             result = orchestrator.heal(
                 platform=self._platform,
                 element_context=element_context,
                 page_source=page_source,
                 get_screenshot=_get_screenshot if self._page.config.healing.llm.include_screenshot else None,
+                verify_locator=_verify_locator,
             )
         except HealingException:
             raise ElementException(

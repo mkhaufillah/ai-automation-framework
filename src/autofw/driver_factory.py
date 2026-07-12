@@ -131,7 +131,10 @@ class DriverFactory:
         try:
             self._browser = browser_type.launch(
                 headless=wc.headless,
-                args=["--disable-blink-features=AutomationControlled"],
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-gpu",
+                ],
             )
         except Exception as e:
             raise DriverException(f"Failed to launch {wc.browser}: {e}") from e
@@ -141,6 +144,7 @@ class DriverFactory:
             locale=wc.locale,
             timezone_id=wc.timezone,
             record_video_dir="videos/" if wc.record_video else None,
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         )
 
         self._page = self._context.new_page()

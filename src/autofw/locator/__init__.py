@@ -78,7 +78,6 @@ class Locator:
 
 class LocatorManager:
     """Loads and caches locators from JSON/YAML files."""
-
     def __init__(self, locators_dir: str | Path = "locators/"):
         self._locators_dir = Path(locators_dir)
         self._cache: dict[str, Locator] = {}

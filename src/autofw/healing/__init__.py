@@ -56,6 +56,7 @@ class HealingOrchestrator:
         element_context: dict[str, Any],
         page_source: str,
         get_screenshot: Optional[callable] = None,
+        verify_locator: Optional[callable] = None,
     ) -> dict[str, Any]:
         """
         Run the full healing pipeline.
@@ -77,13 +78,17 @@ class HealingOrchestrator:
         if self.cache:
             cached = self.cache.get(page_name, element_name, platform)
             if cached:
-                logger.info("[HEAL] Cache hit for %s.%s", page_name, element_name)
-                return {
-                    "locator": cached,
-                    "source": "cache",
-                    "reason": "Reused previously healed locator from cache",
-                    "confidence": "high",
-                }
+                if verify_locator and not verify_locator(cached):
+                    logger.info("[HEAL] Cached locator invalid, discarding: %s", cached)
+                    # We can optionally remove it from cache here, but it'll be overwritten later
+                else:
+                    logger.info("[HEAL] Cache hit for %s.%s", page_name, element_name)
+                    return {
+                        "locator": cached,
+                        "source": "cache",
+                        "reason": "Reused previously healed locator from cache",
+                        "confidence": "high",
+                    }
 
         # ---- Phase 1: Heuristic fallbacks ----
         if self.config.healing.heuristics.enabled:
@@ -91,6 +96,11 @@ class HealingOrchestrator:
             for attempt in range(self.config.healing.heuristics.max_attempts):
                 try:
                     healed = self.heuristic_healer.heal(platform, element_context.get("original_locator", {}))
+                    
+                    if verify_locator and not verify_locator(healed):
+                        logger.info("[HEAL] Heuristic attempt #%d produced invalid locator: %s", attempt + 1, healed)
+                        continue
+                        
                     logger.info("[HEAL] Heuristic attempt #%d produced: %s", attempt + 1, healed)
 
                     # Cache it so subsequent calls skip heuristics too
@@ -134,6 +144,9 @@ class HealingOrchestrator:
                 healed_locator = llm_result.get("locator", {})
                 confidence = llm_result.get("confidence", "medium")
                 reason = llm_result.get("reason", "LLM-healed locator")
+
+                if verify_locator and not verify_locator(healed_locator):
+                    raise LLMHealingException(f"LLM produced invalid locator: {healed_locator}")
 
                 # Cache it
                 if self.cache and healed_locator:
