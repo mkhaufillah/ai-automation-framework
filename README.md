@@ -12,10 +12,10 @@ Supports **Web** (Playwright), **Android Native** (Appium), and **iOS Native** (
 | **🧠 AI Auto-healing** | When an element locator fails, the framework auto-recovers via heuristic fallbacks → LLM analysis |
 | **⚡ Heuristic fallback** | Zero-cost retry with alternative locator strategies (test_id → role → label → css → xpath → text) |
 | **🤖 LLM healing** | Sends screenshot + page source to an LLM to determine the correct element |
-| **💾 Healing cache** | Persists healed locators so they work on subsequent runs |
+| **💾 Healing cache** | Persists healed locators so they work on subsequent runs instantly |
 | **📦 Page Object Model** | Clean, maintainable page objects with typed locators |
 | **📸 Auto-fail artifacts** | Screenshots, page source, and healing reports on failure |
-| **🔌 Pluggable LLM** | OpenAI, LiteLLM (Ollama, vLLM, Anthropic, etc.) |
+| **🔌 Pluggable LLM** | OpenAI, LiteLLM, Gemini, Anthropic, OpenCode |
 
 ## 📋 Architecture
 
@@ -24,7 +24,7 @@ ai-automation-framework/
 ├── src/autofw/
 │   ├── core/              # Config, constants, exceptions
 │   ├── locator/           # Multi-platform locator definitions
-│   ├── healing/           # Heuristic + LLM healing pipeline
+│   ├── healing/           # Heuristic + LLM healing pipeline & Cache
 │   ├── elements/          # Unified element with auto-healing
 │   ├── pages/             # Base page object
 │   ├── utils/             # Logger, wait, screenshot helpers
@@ -37,7 +37,6 @@ ai-automation-framework/
 │   ├── web/               # Web test examples
 │   ├── android/           # Android test examples
 │   └── ios/               # iOS test examples
-├── locators/              # External locator files (optional)
 └── requirements.txt
 ```
 
@@ -81,9 +80,18 @@ ios:
 
 healing:
   enabled: true
+  cache:
+    enabled: true
+    db_path: ".healing_cache.json"
+  heuristics:
+    enabled: true
+    max_attempts: 3
   llm:
+    enabled: true
+    provider: openai                # openai | litellm | gemini | anthropic | opencode
     api_key: "${OPENAI_API_KEY}"    # Or set env: HEALING_API_KEY
     model: gpt-4o-mini
+    include_screenshot: true
 ```
 
 ### 3. Write a Page Object
@@ -147,30 +155,53 @@ pytest tests/web/ --platform web --disable-healing -v
 
 ## 🧠 How AI Healing Works
 
+The framework implements a robust, multi-phase healing pipeline to ensure UI tests do not fail on trivial UI changes. When an action on an element fails (e.g., the element is not found within the timeout), the `HealingOrchestrator` is triggered automatically.
+
+Here is the complete step-by-step flow of how healing works:
+
+```mermaid
+flowchart TD
+    Start([Element Action Fails]) --> CheckCache{0. Check Cache}
+    CheckCache -- Hit & Valid --> UseHealed([Retry with Cached Locator])
+    CheckCache -- Miss / Invalid --> CheckHeuristic{1. Heuristics Enabled?}
+    
+    CheckHeuristic -- Yes --> RunHeuristics[Run Heuristic Fallbacks]
+    CheckHeuristic -- No --> CheckLLM{2. LLM Enabled?}
+    
+    RunHeuristics -- Found & Valid --> CacheHealed1[Cache New Locator]
+    CacheHealed1 --> UseHealed
+    RunHeuristics -- Exhausted --> CheckLLM
+    
+    CheckLLM -- Yes --> RunLLM[Send Context, Screenshot & Source to LLM]
+    CheckLLM -- No --> Fail([Raise HealingException])
+    
+    RunLLM -- Returns New Locator & Valid --> CacheHealed2[Cache New Locator]
+    CacheHealed2 --> UseHealed
+    RunLLM -- Invalid / Error --> Fail
 ```
-Element action fails
-    │
-    ▼
-┌──────────────────────┐
-│ 1. Heuristic Fallback│  ← Zero-cost, tries alternative locator strategies
-│    (3 attempts)      │     (test_id → role → label → css → xpath → text)
-└──────────┬───────────┘
-           │ all failed
-           ▼
-┌──────────────────────┐
-│ 2. LLM Analysis      │  ← Sends screenshot + page source to LLM
-│    (if enabled)      │     Receives corrected locator + confidence score
-└──────────┬───────────┘
-           │ success
-           ▼
-┌──────────────────────┐
-│ 3. Cache Healed      │  ← Persisted for future runs
-│    Locator           │     (no re-healing needed)
-└──────────┬───────────┘
-           │
-           ▼
-    Retry action with healed locator
-```
+
+### Phase 0: Local Healing Cache
+To ensure tests run fast and save API costs, the framework first checks the local cache (e.g., `.healing_cache.json`).
+- If a previously healed locator exists for this page and element, it verifies its validity.
+- If it's valid, it immediately reuses it.
+
+### Phase 1: Heuristic Fallbacks (Zero-Cost Healing)
+If the cache misses, the `HeuristicHealer` steps in. It attempts to derive a working locator without making external API calls, making it extremely fast and zero-cost.
+- It determines the original failing locator strategy (e.g., `css`).
+- It tries alternative locator strategies based on priority (`WEB_LOCATOR_PRIORITY`, `ANDROID_SPECIFIC_PRIORITY`, etc.) using the original value or derived values from the context.
+- For Web, the priority order is typically: `test_id` → `id` → `role` → `label` → `placeholder` → `css` → `xpath` → `text` → `alt_text` → `title`.
+- If an alternative strategy successfully locates the element, it is cached and the test continues.
+
+### Phase 2: LLM Analysis
+If all zero-cost heuristics are exhausted or fail, the framework delegates the problem to the `LLMHealer`.
+- **Minification**: The current page source (HTML/XML) is minified (scripts, styles, SVG paths, and comments removed) to save token usage.
+- **Context Collection**: The minified page source, a base64 screenshot (if enabled), and the element's metadata (original locator, description, page name) are compiled.
+- **LLM Prompting**: The compiled context is sent to the configured LLM provider (`openai`, `litellm`, `gemini`, `anthropic`, or `opencode`) using a strict system prompt.
+- **JSON Response**: The LLM acts as an expert QA engineer and returns a JSON object containing the `locator`, `confidence`, and `reason`.
+- If the LLM successfully finds the element, the new locator is cached, and the test action is retried.
+
+### Phase 3: Total Failure
+If the LLM fails to find the element, returns an invalid response, or encounters an API error, a final `HealingException` is raised, gracefully failing the test.
 
 ## ⚙️ Configuration Reference
 
@@ -178,9 +209,9 @@ Element action fails
 
 | Flag | Description |
 |---|---|
-| `--platform web|android|ios` | Override target platform |
+| `--platform web\|android\|ios` | Override target platform |
 | `--config path/to/config.yaml` | Custom config path |
-| `--disable-healing` | Disable AI healing |
+| `--disable-healing` | Disable AI healing entirely |
 | `--heal-cache path/to/cache.json` | Custom healing cache path |
 
 ### Environment Variables
@@ -206,10 +237,6 @@ project/
 │   └── ios/
 │       ├── pages/         # Page objects for iOS
 │       └── test_*.py
-├── locators/
-│   ├── web/               # External locator JSON files
-│   ├── android/
-│   └── ios/
 ├── config/
 │   ├── config.yaml        # Base config
 │   └── environments/      # Per-environment overrides
